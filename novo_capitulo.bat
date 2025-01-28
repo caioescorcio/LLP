@@ -22,8 +22,5 @@ echo # Capitulo %new_num% > "!new_folder!\Capitulo_%new_num%.md"
 rem Executa os comandos na nova pasta
 cd "!new_folder!"
 mkdir codigos
-cd codigos
-python -m venv venv3
-call .\venv3\Scripts\activate.bat
 
 endlocal
