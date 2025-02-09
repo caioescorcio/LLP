@@ -12,6 +12,8 @@ O autor fala sobre a utilização do [gdb](https://www.ic.unicamp.br/~rafael/mat
 
 ## 2.2 Escrevendo "Hello, world"
 
+### 2.2.1 Entradas e saídas básicas
+
 Pela ideologia Unix, tudo é um arquivo, ou seja, tudo é uma stream de bytes. Com eles é possível executar as mais fundamentais operações em um sistema operacional.
 
 Nessa lógica, o racional por trás da execução de programas, em ambientes Unix no geral, é a abertura de um arquivo. Cada arquivo é identificado pelo seu *descritor*, que é um inteiro que o identifica. Eles são abertos pela syscall `open` que, por sua vez, inicia 3 outros arquivos para a execução do programa: `stdin`, `stdout` e `stderr`, que têm descritores *0*, *1* e *2*. Eles controlam o input, output e os erros na execução do dado programa. 
@@ -34,6 +36,8 @@ _start:
     mov rdx, 14         ; argumento #3 em rdx: quantos bytes devem ser escritos?
     syscall             ; faz a syscall, que tem a sua função dependente do valor de RAX
 ```
+
+### 2.2.2 Estrutura do programa
 
 Em linhas gerais, a explicação do código é:
 
@@ -58,5 +62,60 @@ Em linhas gerais, a explicação do código é:
 ```asm
     mov rax, 60         ; syscall: sys_exit (60), que é o de EXIT
     xor rdi, rdi        ; Código de saída 0 em rdi, pois AAA XOR AAA é sempre 0
+                        ; Código de saída 0 indica sucesso, enquanto outros valores indicam erros
     syscall             ; Chama o kernel para sair  
+```
+
+Falando agora um pouco sobre os dados em assembly, vale ressaltar que na seção `.data`, podemos usar várias diretivas sobre como faremos nossos dados:
+
+- `db`, bytes
+- `dw`, "palavras" (words, 2 bytes cada)
+- `dd`, double words (4 bytes)
+- `dq`, quadruple words (8 bytes)
+
+Um exemplo de listagem de variáveis globais pode ser:
+
+```asm
+section .data
+    ex1: db 5, 16, 8, 4, 2, 1   ; concatenação de 0x05  0x10  0x08  0x04  0x02  0x01    (6bytes)
+    ex2: times 999 db 42        ; 0x2A 0x2A 0x2A ... (999 vezes)                        (999 bytes)
+    ex3: dw 999                 ; 0xE7 0x03                                             (2 bytes)
+```
+
+Nesses casos, letras e dígitos são codificados como ASCII.
+
+Vale ressaltar também alguns detalhes sobre como o ASM funciona:
+
+- mov:
+    - não pode copiar dados da memória para memória, só com registradores
+    - os operandos de origem e de destino devem ter o mesmo tamanho total
+- rax:
+    - armazena syscall
+- rdi, rsi, rdx, r10, r8 e r9:
+    - usados pra armazenar argumentos de syscall
+    - syscall não pode ter mais de 6 argumentos
+- syscall:
+    - modifica rcx e r11, explicação em outro capítulo
+    - a syscall de `write` recebe 3 argumentos: descritor de arquivo (no caso o stdout), o endereço do buffer a ser escrito (rsi) e a quantidade de bytes a serem escritos (rdx)
+
+
+Finalmente, o código "correto" de hello_world.asm seria:
+
+```asm
+section .data
+message: db 'hello, world!', 10
+
+section .text
+global _start
+
+_start:
+    mov rax, 1;
+    mov rdi, 1;
+    mov rsi, message;
+    mov rdx, 14
+    syscall;
+
+    mov rax, 60   ; sys_exit recebe apenas um argumento, o código de saída, além do RAX     
+    xor rdi, rdi        
+    syscall           
 ```
