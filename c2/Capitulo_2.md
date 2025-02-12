@@ -119,3 +119,104 @@ _start:
     xor rdi, rdi        
     syscall           
 ```
+
+## 2.3  Exemplo: exibindo o conteúdo de registradores
+
+Vamos fazer um código de leitura do conteúdo de alguns registradores...
+
+```asm
+section .data
+
+codes:
+    db  '0123456789ABCDEF'
+
+section .text
+global _start
+
+_start:
+    ; numero 1122... em hexadecimal
+    mov rax, 0x1122334455667788 ; = 0001 0001 0010 0010 ... 1000 1000  
+
+    mov rdi, 1   ; File descriptor 1 (stdout) para saida
+    mov rdx, 1   ; Numero de bytes a escrever (cada caractere hexadecimal)
+    mov rcx, 64  ; 64 bits no numero, usado para deslocamento
+
+    ; 4 bits representam um dígito hexadecimal
+    ; Use o descolamento (shift) e o AND lógico para isola-los
+    ; O resultado desse AND é o 'offset' no array '.codes'
+
+.loop:
+
+    push rax                ; "aumenta" a fila e coloca o valor do ponteiro de RAX no topo da fila para pega-lo depois que fizermos cada iteracao no loop
+    sub rcx, 4              ; subtrai rcx em 4. RCX só será zero se o loop for perpassado 16x (64 - 4x16 = 0)
+    ; cl eh a parte menor do reg rcx: 
+    ; rcx -- ecx -- cx -- ch + cl, cl sao os ultimos 8 bits de rcx, no caso, 64, 60, 58, ... a cada iteracao
+
+    sar rax, cl             ; sar = shift arithmetic right - preserva o sinal, shifta RAX em cl
+    and rax, 0xF            ; pega os ultimos 4 bits (pois 0xF = 1111) de rax. Isso faz com que passemos a cada caractere
+
+    lea rsi, [codes + rax]  ; lea = LOAD EFFECTIVE ADDRESS, coloca em RSI o que a posição de 'codes' + a posição do que está em rax
+                            ; nesse caso, se rax = 0010, teremos em RSI o ponteiro do inicio do array 'codes' + 2, representando o caractere '2'
+    mov rax, 1              ; syscall de write
+
+    ; syscall altera rcx e r11
+    
+    ; syscall altera RCX e R11, entao salvamos RCX temporariamente
+    push rcx      
+    syscall       ; Chamada de sistema: write(1, &char, 1)
+    pop rcx       ; Restauramos RCX apos a syscall
+
+    pop rax       ; recuperamos o RAX
+
+    ; 'test' pode ser usado cono una verificacao rapida de se um numero eh 0
+    
+    test rcx, rcx   ; checamos se RCX chegou a 0
+    jnz .loop       ; se nao, loop
+
+    mov rax, 60
+    xor rdi, rdi    ; finalizamos o programa
+    syscall
+```
+
+Questão 14: Corretos
+Questão 15: sar preserva o sinal e shr não preserva, puxa da posição de memória mais próxima ("acima")
+Questão 16: Modificamos o modo de "tradução". Ao invés de compará-los a um array "codes", comparamos a outro tipo de estrutura
+
+*Nota*: é importante lembrar de zerar os regs que se trabalha.
+
+
+### 2.3.1 Rótulos locais
+
+São os "nomezinhos" que usamos ao longo do código para rotular as partes de execução. O último rótulo global usado sem "." no início é a base para os rótulos subsequentes, por exemplo: ".loop" nesse caso é "_start.loop". Podemos usar essa referência para endereçar qualquer ponto do programa.
+
+### 2.3.2 Endereçamento relativo
+
+Isso leva em conta casos como o `lea`, ou até mesmo o `mov`:
+
+- `mov rsi, rax` coloca o valor de rax em rsi.
+- `mov rsi, [rax]` copia o conteúdo da memória ("8 bytes em sequência", para 64 bits, já que o mov leva em conta os tamanhos dos dois operandos como iguais), a partir do endereço no colchete. Esses colchetes são *endereçamentos indiretos*.
+
+Como dito, `lea` significa "load effective address", que representa uma forma de "fazer o mov com argumentos diversos", podendo realizar operações no comando. No caso usado (`lea rsi, [codes + rax]`), o ponteiro estaria apontando para a posição a partir do primeiro digito de codes[rax], e, uma vez que RDI estava em 1, seria printado apenas 1 caractere.
+
+Nesse caso:
+
+-`lea rsi, [codes + rax]` é o mesmo que: 
+    - `mov rsi, codes`
+    - `add rsi, rax`
+
+### 2.3.3 Ordem de execução
+
+Todos os comandos são executados de maneira consecutiva, exceto nos casos de jumps. A instrução de jump incondicional (`jmp`) pode ser substituida por `mov rip, addr`, onde addr é um endereço arbitrário e `rip` é o PC. Os jumps dependem das `rflags`, que são geradas a partir de outros comandos. Por exemplo, `test` e `cmp` geram flags de comparação dos valores de dois registradores, sendo usados em união aos jumps. `cmp` subtrai o segundo operando do primeiro mas não salva o valor em lugar nenhum, ativando apenas as flags. `test` faz praticamente a mesma coisa, mas com um AND lógico no lugar.
+
+Ex: `test rcx, rcx` é rcx AND rcx, que só é 0 se *rcx == 0*.
+
+Os jumps mais comuns são:
+
+- `jF`: onde F é uma flag. No exemplo `jnz` é para a flag `nz` que é "not zero"
+- `ja`/`jb`: jump if above e jump if below - para um jump depois de um `cmp` unsigned
+- `jg`/`jl`: jump if greater e jump if lower - para comparação com sinal
+- `jae`/`jle`: jump if above or equal e jump if less or equal - intuitivo.
+
+Questão 17: `je` é jump if equal, `jz` é jump if zero.
+
+
