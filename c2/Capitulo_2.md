@@ -200,7 +200,7 @@ Como dito, `lea` significa "load effective address", que representa uma forma de
 
 Nesse caso:
 
--`lea rsi, [codes + rax]` é o mesmo que: 
+- `lea rsi, [codes + rax]` é o mesmo que: 
     - `mov rsi, codes`
     - `add rsi, rax`
 
@@ -218,5 +218,107 @@ Os jumps mais comuns são:
 - `jae`/`jle`: jump if above or equal e jump if less or equal - intuitivo.
 
 Questão 17: `je` é jump if equal, `jz` é jump if zero.
+
+## 2.4 Chamadas de função
+
+Seguindo a lógica esperada, a chamada de função na realidade ocorre por meio de um "`push` and `jmp`", como da seguinte forma:
+
+```asm
+push rip ; salva o PC da instrução "atual"
+jmp <ENDEREÇO>  ; chama outra rotina
+
+; isso tudo equivale a um:
+
+call <ENDEREÇO>
+```
+
+O `rip` fica salvo como endereço de retorno e, dessa forma, é usado para quando a rotina sair de sua execução. 
+
+O autor fala que cada função pode receber "infinitos" argumentos, mas os 6 primeiros argumentos a serem passados são `rdi`, `rsi`, `rdx`, `rcx`, `r8` e `r9`, respectivamente. O restante é passado na pilha em ordem inversa.
+
+O final de execução de uma função não é claro, mas a instrução `ret` simboliza o final da função, já que equivale a um `pop rip`. GARANTA QUE RIP ESTEJA NA PONTA DA FILA. Ela deve ser administrada com cuidado.
+
+Existem funções que alteram (obviamente) o conteúdo dos registradores. Eis uma distinção:
+
+- Regs callee-saved: salvos por quem é chamado. Devem ser salvos/restaurados ainda durante a execução da função, eles são `rbx`, `rbp`, `rsp`, `r12-15`.
+- Regs caller-saved: salvos por quem chama. Devem salvos antes da execução da função e salvos depois. Não é necessário que isso seja feito ao longo da execução. São os demais regs.
+
+A conveção geral é:
+
+- Salvar e restaurar os callee-saved.
+- Estar ciente que os caller-saved são passíveis de modificação.
+
+Via de regra, além de tudo isso, o registrador `rax` é usado como endereço de retorno das funções, sendo ele retornado (seja via syscall ou via outros métodos) antes do fim da função (`ret`). Caso sejam retornados 2 valores, usa-se `rdx`.
+
+Essas convenções servem para que as alterações feitas em uma função sejam transparentes ao programador, facilitando o seu uso. Cuidado, pois algumas `syscall`s devolvem valores também!
+
+Não usei `rbp` nem `rsp`, pois eles são implicitamente usados durante a execução (ponteiros de pilha).
+
+Agora, faremos um código `print_call.asm`, em que haverá funções do tipo `print_newline` e `print_hex`:
+
+
+```asm
+section .data
+
+newline_char: db 10
+codes: db '0123456789ABCDEF'
+
+section .text
+global _start
+
+print_newline:
+
+    mov rax, 1              ; para um syscall de stdout
+    mov rdi, 1              ; para um destino de output (FD, arquivo) 1 (terminal)
+    mov rdx, 1              ; para indicar que eh 1 caractere
+    mov rsi, newline_char   ; para indicar a mensagem
+    syscall
+    ret
+
+print_hex:
+
+    mov rax, rdi            ; coloca rdi em rax, RDI sera o nosso arguemnto
+    
+    mov rdi, 1              ; para um destino de output (FD, arquivo) 1 (terminal)              
+    mov rdx, 1              ; para indicar que eh 1 caractere
+    mov rcx, 64             ; mesmo esquema de prin_rax.asm    
+    
+iterate:
+    push rax                ; salva rax, pois o modificaremos no syscall
+    sub rcx, 4              ; iteracao de 4 em 4 ate 64
+    sar rax, cl             ; shift de rax em cl (60, 58...)
+    and rax, 0xf            ; filtra apenas o ultimo caractere
+    lea rsi, [codes + rax]  ; coloca em rsi ("ponteiro de print") o que representaria, o offset de codes em caracteres
+
+    mov rax, 1              ; stdout
+
+    push rcx                ; syscall altera rcx, devemos salva-lo  
+    syscall                 ; rax = 1 (31, identificador de write)
+                            ; rdi = 1 (stdout)
+                            ; rsi = endereco do caractere (codes + offset)
+    pop rcx
+    pop rax
+    test rcx, rcx
+    jnz iterate             ; recuperacao de valores + loop
+
+    ret
+
+_start:
+    call print_newline      ; nao esqueca que print_newline modifica rdi
+    mov rdi, 0xCA10E5C04C10
+    call print_hex
+    call print_newline
+    call print_newline
+
+    mov rax, 60
+    xor rdi, rdi
+    syscall
+
+```
+
+As explicações estão ao longo do código
+
+
+
 
 
