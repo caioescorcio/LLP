@@ -319,6 +319,135 @@ _start:
 As explicações estão ao longo do código
 
 
+## 2.5 Trabalhando com dados
+
+### 2.5.1 Endianess
+
+Essa parte do livro na verade é uma forma de diferenciar números *big endian* de números *little endian*, que são duas convenções que os processadores adotam para realizar sua operações.
+
+- Big Endian: números com vários bytes são armazenados na memória começando dos bytes mais significativos 
+- Little Endian: números com vários bytes são armazenados na memória começando dos bytes menos significativos
+
+Veja a tabela:
+
+| Representação | Bytes Individuais |
+|--------------|----------------|
+| Big Endian   | `00 00 12 34`  |
+| Little Endian | `34 12 00 00`  |
+
+O Intel 64 é little endian, qque apresenta a vantagem do descarte dos bytes mais significativos de maneira mais eficiente, excluindo os endereços de memória "endereço + offset" para números seguidos de 0s até um determinado offset.
+
+Big Endian geralmente é usado para pacotes de rede (ex: TCP/IP) e na JVM (Java Virtual Machine, para rodar códigos Java). Existe também o *Middle Endian*, mas não é muito utilizado.
+
+### 2.5.2 Strings
+
+Strings podem ser usadas ou colocando o seu tamanho de maneira explicita antes:
+
+- `db 3, 'ola'`
+
+Ou com um caractere de 'EOF', `0x0`:
+
+- `db 'ola', 0`
+
+### 2.5.3 Pré-processamento de constantes
+
+Não é incomum ver códigos como:
+
+```
+x: 0
+
+...
+
+mov rax, x + 1 + 2*3
+```
+
+O NASM aceita esse tipo de expressão, com parenteses e até operações com bits, mas apenas com constantes conhecidas pelo compilador. Essas constantes são pré-processadas e não são calculadas em tempo de execução, tornando-se análogas à utilização de `add` ou `mul`.
+
+### 2.5.4 Ponteiros e diferentes tipos de endereçamento
+
+Se um ponteiro tem 8 bytes, faz sentido conseguirmos operar com os valores que ele representa para utilizar formas diferentes de dados, mas sempre deixando claro o tamanho dos números que estamos mexendo ou, pelo menos, como deduzí-lo. Veja os seguintes tipos de endereçamento:
+
+```
+mov rax, 10     ; endereçamento com o número direto: RAX agora "estará apontando para o número 10"
+mov rax, rbx    ; endereçamento com o ponteiro de outro vetor: RAX aponta para o mesmo lugar que o RBX está apontando
+
+mov r9, 10
+mov rax, [r9]   ; endereçamento com o valor de outro vetor: RAX aponta para o endereço correspondente ao valor
+                ; de 8 bytes a partir da posição em r9
+                ; No banco de regs
+                ; POS  VAL
+                ; 0x0  0x00
+                ; 0x1  0x00
+                ; 0x2  0x00
+                ; 0x3  0x00
+                ; 0x4  0x00
+                ; 0x5  0x00
+                ; 0x6  0x00
+                ; 0x7  0x00
+                ; 0x8  0x00
+                ; 0x9  0x00
+                ; 0x10 0x00 rax aponta deste endereço para frente até chegar em 8 bytes (0x18) 
+                ; 0x11 0x00
+                ; ...
+
+
+    
+mov rax. [r9 + 4*rcx + 9]   ; endereçamento de "base + escala*indice + deslocamento", em que: 
+                            ; a base é imediata (vinda do IMMGen) ou está um registrador
+                            ; a escala só pode ser imediata e igual a 1, 2, 4 ou 8
+                            ; o índice é imediato ou está um registrador
+                            ; o deslocamento sempre é imediato
+```
+
+Para finalizar, falaremos da forma de endereçamento usando outros tipos de tamanhos de palavra. Em `addressing.asm`:
+
+```asm
+section .data
+    test: dq -1  ; Definimos um valor inicial de teste = FFFFFFFFFFFFFFFF
+    codes: db '0123456789ABCDEF' 
+
+section .text
+global _start
+
+_start:
+    mov byte[test], 1       ; colocamos no byte (little endian) começando no endereço de 'test' o numero 1: test = FFFFFFFFFFFFFF01
+    ; mov word[test], 1     ; colocamos no word (little endian) começando no endereço de 'test' o numero 1: test = FFFFFFFFFFFF0001
+    ; mov dword[test], 1    ; colocamos no dword (little endian) começando no endereço de 'test' o numero 1: test = FFFFFFFF00000001
+    ; mov qword[test], 1    ; colocamos no qword (little endian) começando no endereço de 'test' o numero 1: test = 0000000000000001
+
+    mov rax, [test]    
+
+    ; Trecho reciclado de print_rax.asm
+
+    mov rdi, 1 
+    mov rdx, 1  
+    mov rcx, 64 
+
+.loop:
+    push rax        
+    sub rcx, 4      
+
+    shr rax, cl     
+    and rax, 0xF    
+
+    lea rsi, [codes + rax] 
+
+    mov rax, 1      
+    push rcx        
+    syscall         
+    pop rcx         
+
+    pop rax         
+
+    test rcx, rcx   
+    jnz .loop       
+
+    
+    mov rax, 60     
+    xor rdi, rdi
+    syscall
+
+```
 
 
 
