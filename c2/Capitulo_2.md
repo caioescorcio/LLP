@@ -507,3 +507,31 @@ _start:
 
 Os bugs, no livro, do código da questão 19 (listagem 2.15) são que RAX não é zerado e que r13 deve ser restaurado na execução do código.
 
+### 2.7 Exercício: biblioteca de entrada/saída
+
+Agora criaremos uma lib similar à de stdio. As seguintes funções foram implementadas como os respectivos códigos em assembly e estão comentados ao longo dos códigos:
+
+ - exit(): encerra o processo com um código de saída
+    - Raciocínio: Apenas colocar em rdi (registrador de argumento) o valor desejado de exit code e chamar a função recebendo-o
+ - strlen(): feita anteriormente
+    - Raciocínio: basicamente passa pelos bytes de uma determinada posição de memória de um buffer é zero. Se sim, encerra o código, se não, incrementa uma variável de tamanho
+ - print_char(): printa char
+     - Raciocínio: Com o char colocado em RDI, salvamo-os e colocamos como valor de RSI para a execução da syscall de print
+ - print_newline(): printa \n (feito em print_call)
+     - Raciocínio: mesmo esquema de print_char com um "\n"
+ - print_uint(): printa um inteiro de 8 bits sem sinal
+     - Raciocínio: colocamos RDI (argumento) em RAX e apontamos com RSI (string de print) para o fim de um buffer que será printado. Com a função `div`, que divide RAX, passamos por um loop de divisões por 10 (em RCX) e, em seguida, adiciona-se o valor de byte do numero no que está sendo apontado por RSI
+ - print_int(): printa um inteiro de 8 bits com sinal
+     - Raciocínio: mesmo esquema de print_uint mas printando o caractere `-` e mudando o sinal do numero caso ele seja negativo
+ - read_char(): le um caractere em stdin e o devolve
+     - Raciocínio: é apenas umas syscall de stdin + print stdout
+ - read_word(): recebe um endereço e um tamanho para ler uma palavra e a devolve
+     - Raciocínio: passamos por um loop de leituras unitarias de caracteres para que eles sejam, um a um, armazenados em um buffer caso não sejam EOF ou NUL. Verificamos se eles são não nulos no processo. Para isso, usamos os vetores de RSP (com o auxílio de RAX) para manter-los em pilha
+ - parse_uint(): recebe uma string terminada em nulo e tenta transforma-la em uma sequencia de uint
+     - Raciocínio: passamos posição a posição de um RDI e convertemos os caracteres que são números no processo.
+ - string_equals(): verifrica se duas strings são iguais
+     - Raciocínio: verificamos o tamanho e comparamos vetores de mesma posição para verificar se seus valores em byte são iguais
+ - string_copy(): copia uma string para outra
+     - Raciocínio: mesmo esqumea de string_equals, mas com uma abordagem de cópia (mov)
+
+As demais questões presentes no livro serão respondidas no mesmo.
