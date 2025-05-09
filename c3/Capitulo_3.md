@@ -153,3 +153,88 @@ _gdt:
 - A tabela de descritores pode armazenar 8192 descritores de segmento. Como utilizar essa pequena quantidade de maneira eficaz?
 
 Tudo isso resultou no banimento da segmentação com a implementação do modo longo, onde, no entanto, ainda se usam anéis de proteção e, por isso, é necessário ao programador compreende-los.
+
+## 3.3 Segmentação mínima em modo longo
+
+Mesmo em outros modos de utilização, o modo de operação com registradores depende do uso de segmentação. Contudo, com o advento da memória virtual é mais fácil de se fazer a resolução de um endereço lógico para um endereço físico. Isto é: a segmentação é uma forma de endereço virtual plano que associa um endereço lógico a um endereço físico por meio de rotinas de virtual.
+
+Os enderços de memória da LDT não foram usado pois alteravam um contexto geral de offset e de base usados na GDT (cujas bases são usadas pelo _cs, ds, es e ss_ e não mudam). Sua base fica sempre em 0x0 e não é alterada pelo descritor, mas os tamanhos dos segmentos não são limitados. Assim, com esse contexto de uso, é válido afirmar que é necessária a existência de alguns valores-base para a GDT:
+
+- O descritor nulo
+- O descritor de código
+- O descritor de dados
+
+Os outros segmentos, apesar de importantes, não são vitais para o funcionamento do modo longo em Kernel. Contudo, para os demais níveis de privilégio, é necessária a criação de outros valores-base na GDT (dados e código para usuário, por exemplo).
+
+Os descritores de código e de usuário são feitos separadamente pois não existem combinações entre os bits da estrutura do descritor que sirvam para Leitura + Escrita simultaneamente.
+
+Com essas informações, analisemos a formação da GDT do Pure64 (loader de um sistema operacional de código aberto):
+
+Em `gdt64.asm`:
+
+```asm
+align 16  ; This ensures that the next command or data element is
+; stored starting at an address divisible by 16 (even if we need
+; to skip some bytes to achieve that).
+
+; The following will be copied to GDTR via LGDTR instruction:
+
+GDTR64:                 ; Global Descriptors Table Register
+    dw gdt64_end - gdt64 - 1    ; limit of GDT (size minus one)
+    dq 0x0000000000001000       ; linear address of GDT
+
+
+; This structure is copied to 0x0000000000001000
+gdt64:                  
+SYS64_NULL_SEL equ $-gdt64      ; Null Segment
+    dq 0x0000000000000000
+; Code segment, read/exec, nonconforming
+SYS64_CODE_SEL equ $-gdt64      
+    dq 0x0020980000000000       ; 0x00209A0000000000
+; Data segment, read/write, expand down
+SYS64_DATA_SEL equ $-gdt64      
+    dq 0x0000900000000000       ; 0x0020920000000000
+gdt64_end:
+
+; Dollar sign denotes the current memory address, so
+; $-gdt64 means an offset from `gdt64` label in bytes
+```
+
+O código acima basicamente cria um vetor linear que armazena nossas 3 estruturas de descritores básicas, usando os bits de descritores.
+
+## 3.4 Acessando partes de registradores
+
+### 3.4.1 Um comportamento inesperado
+
+O relacionamento entre RAX, EAX e AX não é necessariamente intuitivo. Vejamos o arquivo `risc_cisc.asm`:
+
+```asm
+mov  rax, 0x1111222233334444         ; rax = 0x1111222233334444
+mov  eax, 0x55556666                 ; !rax = 0x0000000055556666
+                                     ;  why not rax = 0x1122334455556666?
+
+mov  rax, 0x1111222233334444         ; rax = 0x1111222233334444
+mov  ax, 0x7777                      ; rax = 0x1111222233337777 
+                                     ; this works as expected 
+mov  rax, 0x1111222233334444         ; rax = 0x1111222233334444
+xor  eax, eax                        ; rax = 0x0000000000000000
+                                     ; why not rax = 0x1111222200000000?
+```
+
+Isso ocorre pois, ao utilizar operações com 32 bits, o processador extende a operação com o bit de sinal para os 64 bits. 
+
+
+### 3.4.2 RISC e CISC
+
+Em relação ao RISC e o CISC, uma breve descrição:
+
+- RISC: apenas instruções primitivas (Reduced Instruction Set Computer)
+- CISC: Instruções especializadas de alto nível (Complete Instruction Set Computer)
+
+O RISC facilita o trabalho dos compiladores ao mesmo tempo que facilita o uso de pipelines.
+
+É engraçado mencionar que o Intel 64 é CISC, com uma série de instruções complexas a serem usadas, mas que são traduzidas a microcódigos mais simples.
+
+### 3.4.3 Explicação
+
+Aqui o autor na verdade fala um pouco sobre o por que dessas duas arquiteturas. Nada muito relevante.
