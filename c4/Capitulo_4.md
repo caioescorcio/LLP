@@ -302,3 +302,15 @@ syscall
 ```
 
 Acho que esse código é um dos mais impressionantes já feitos: ele procura um arquivo, pega seu descritor e aloca-o na memória (como se fosse uma grande string). Uma vez que o nosso descritor (ID do arquivo) armazenava uma string e nossa função `print_string` percorre-a até achar um "nulo", com o local da memória (ponteiro) recebido em RAX, quando a _syscall de open_ é chamada, é printado todo o conteúdo do arquivo que foi selecionado.
+
+
+Sobre a questão 66 e 67 (chamada de stat e input.txt), elas estão no diretório com os respectivos comentários.
+
+Sobre a syscall de `stat` ([vide a documentação](https://blog.rchapman.org/posts/Linux_System_Call_Table_for_x86_64/)):
+
+- RAX = 262, identificador de syscall
+- RDI = diretório, no caso usaremos a constante AT_FDCWD = -100 para o diretório atual
+- RSI = file name, nome do arquivo no diretorio
+- RDX = stat buff, buffer para o stat
+- R10 = flags
+
