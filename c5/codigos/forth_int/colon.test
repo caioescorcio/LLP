@@ -1,0 +1,31 @@
+%define lw 0
+
+%macro colon 2
+%%lw: dq lw 
+db %1, 0
+xt_ %+ %2:
+
+%define lw %%lw
+%endmacro
+
+section .text
+
+colon "teste um", one
+mov rax, 0
+
+colon "teste dois", two
+mov rax, 10
+mov rbx, 10
+
+colon "teste tres", three
+mov rax, 100
+mov rbx, 100
+mov rcx, 100
+
+colon "teste quatro", four
+mov rax, 1000
+mov rbx, 1000
+mov rcx, 1000
+mov rdx, 1000
+
+
