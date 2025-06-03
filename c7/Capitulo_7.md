@@ -485,6 +485,285 @@ O interpretador insere números na pilha, coisa que o compilador não pode fazer
 Faremos `branch n` e `0branch n`, que são do modo de compilação. São semelhantes ao `lit n` em relação ao offset.
 
 
+## 7.3 Exercício: compilador e interpretador de Forth
+
+Agora vamos usar os conhecimentos adiquiridos para fazer um interpretador e um compilador de Forth. Como instruído pelo autor, vamos armazenar PC e W e outros registradores para que eles sejam inalterados ao longo das chamadas de função.
+
+### 7.3.1 Dicionário estático e interpretador
+
+Faremos o dicionário das funções nativas (básicas do Forth). Faremos um macro `native` para definir funções nativas. Em `native_overloading.asm`:
+
+```asm
+%macro native 2
+native %1, %2, 0
+%endmacro
+```
+
+Ele simplesmente nos poupa de fazermos o cabeçalho na seção .data de cada palavra. O nome `overloading` vem do fato de que, originalmente, essas palavras possuiriam flags, mas como a maioria das palavras não as possuirá, sobrecarregamos o macro com 2 argumentos.
+
+Os códigos para o Forth estarão no diretório `./c7/codigos/forth`.
+
+Em seguida, criaremos um macro `colon` (palavras de dois-pontos), para rotinas de dois pontos, análoga so `native`. Em `colon_overloading.asm`:
+
+```asm
+%macro colon 2
+colon %1, %2, 0
+%endmacro
+```
+
+Faremos ainda rotinas de `find_word` e de `cfa` (code from address). Ambas são como as funções apresentadas quando fizemos o dicionário no capítulo 5. A sua descrição é:
+
+- `find_word`: aceita um ponteiro para uma string terminada em nulo e devolve o endereço do início do cabeçalho da palavra. Se não houver nenhuma palavra com esse nome, zero será devolvido.
+- `cfa`: aceita o início do cabeçalho da palavra e pula todo o cabeçalho até chegar no seu **XT**.
+
+Decidi refazer essas funções para ver se eu aprendi. Em `dicionario/find_word.asm`:
+
+```asm
+global find_word
+extern string_equals
+
+section .text
+
+find_word:                          ; RDI conterá o início da string e RSI conterá a entrada do dicionario
+    xor rax, rax                    ; zera RAX antes do loop
+    .loop:
+        test rsi, rsi                   ; se RSI for nulo (primeira entrada) não há como buscar no dicionario
+        jz .end
+        push rdi                        ; salva RDI e RSI
+        push rsi
+        add rsi, 8                      ; adiciona 8 ao RSI pois nosso "dicionario" obedece a seguinte estrutura:
+
+        ;   dq anterior: XXXX   ; como é uma quadword (dq), ao adicionar 8 ao RSI, apontaremos para o "nome" no inicio da string
+        ;   db "nome", 0
+
+        call string_equals
+        pop rsi
+        pop rdi
+        test rax, rax           ; verifica se string_equals deu que são iguais
+        jnz .found              ; se forem, vai para .found
+        mov rsi, [rsi]          ; caso contrário, RSI agora vai apontar para o que está no início do conteúdo de rsi [RSI + 0] que é justamente a posição anterior da memória
+
+        ;   dq anterior: XXXX   ; RSI[0] = === [RSI] = XXXX é o a posição de memória anterior
+        ;   db "nome", 0
+
+        jmp .loop
+    
+    .found:
+        mov rax, rsi            ; retorna a posição no dicionário
+
+    .end:
+        ret
+```
+
+Esse código atenderá entradas de dicionário do tipo:
+
+```asm
+w_plus:
+    dq 0             ; ponteiro para palavra anterior (ou w_mul, etc.)
+    db '+', 0        ; nome da palavra (string null-terminated)
+    db 0             ; flags
+xt_plus:
+    dq plus_impl     ; execution token (ponteiro para o código nativo)
+
+w_minus:
+    dq w_plus
+    db '-', 0
+    db 0
+xt_minus:
+    dq minus_impl
+```
+
+Agora, para o `cfa`, temos uma lógica mais simples, pois teoricamente teremos dejá o ponteiro para o que vem depois da string de resolução da palavra. Em `dicionario/cfa.asm`:
+
+```asm
+global cfa
+
+section .text
+
+cfa:                            ; RAX conterá o início do cabeçalho da palavra no dicionário
+;   Nossa estrutura é:
+;   a: "A", 0
+;      dq posicao_anterior
+;      db 0                 ; flags 
+;   xt_a:
+;       ...
+;
+
+;   Logo, teremos, teoricamente, apenas que adicionar 1 byte ao registrador que conterá
+;   o endereço do cabeçalho, para "pular" o byte de flags
+
+
+    inc rax                     ; pula o byte de flags     
+    .end:
+        ret                     ; RAX apontará para o que está logo abaixo do código
+```
+
+Para testá-las, usou-se o arquivo `test_dict.asm`:
+
+```asm
+
+    extern find_word
+    extern cfa
+    extern print_string
+    extern print_newline
+    extern print_char
+    extern exit
+
+    global _start
+
+section .data
+    test_word1 db "dup",0
+    test_word2 db "-",0
+    test_word3 db "NAOEXISTE",0
+    msg_found db "Encontrada: ",0
+    msg_notfound db "Nao encontrada",0
+    msg_cfa db "CFA check",0
+
+        ; Ponteiro para o início do dicionário
+    pp: dq w_swap
+
+    ; Entradas do dicionário:
+    w_plus:
+        dq 0              ; Link para a palavra anterior (nulo para a primeira palavra)
+        db '+', 0         ; Nome da palavra
+        db 0              ; Terminador nulo
+    xt_plus:
+        db 0
+
+    w_minus:
+        dq w_plus         ; Link para a palavra anterior
+        db '-', 0         ; Nome da palavra
+        db 0              ; Terminador nulo
+    xt_minus:
+        db 0
+
+    w_dup:
+        dq w_minus        ; Link para a palavra anterior
+        db 'dup',0  ; Nome da palavra
+        db 0              ; Terminador nulo
+    xt_dup:
+        db 0
+
+    w_swap:
+        dq w_dup          ; Link para a palavra anterior
+        db 'swap',0  ; Nome da palavra
+        db 0              ; Terminador nulo
+    xt_swap:
+        db 0
+
+section .text
+_start:
+    ; Teste 1: Procurar DUP
+    mov rdi, test_word1
+    mov rsi, pp
+    call find_word
+    test rax, rax
+    jz .notfound1
+
+    mov rdi, msg_found
+    call print_string
+    mov rdi, test_word1
+    call print_string
+    call print_newline
+
+    ; Testa cfa
+    mov rdi, rax
+    call cfa
+    mov rdi, msg_cfa
+    call print_string
+    mov rdi, rax
+    call print_char
+    call print_newline
+    jmp .test2
+
+.notfound1:
+    mov rdi, msg_notfound
+    call print_string
+    call print_newline
+
+.test2:
+    ; Teste 2: Procurar SWAP
+    mov rdi, test_word2
+    mov rsi, pp
+    call find_word
+    test rax, rax
+    jz .notfound2
+
+    mov rdi, msg_found
+    call print_string
+    mov rdi, test_word2
+    call print_string
+    call print_newline
+
+    ; Testa cfa
+    mov rdi, rax
+    call cfa
+    mov rdi, msg_cfa
+    call print_string
+    mov rdi, rax
+    call print_char
+    call print_newline
+    jmp .test3
+
+.notfound2:
+    mov rdi, msg_notfound
+    call print_string
+    call print_newline
+
+.test3:
+    ; Teste 3: Procurar palavra inexistente
+    mov rdi, test_word3
+    mov rsi, pp
+    call find_word
+    test rax, rax
+    jz .notfound3
+
+    mov rdi, msg_found
+    call print_string
+    mov rdi, test_word3
+    call print_string
+    call print_newline
+
+    ; Testa cfa
+    mov rdi, rax
+    call cfa
+    mov rdi, msg_cfa
+    call print_string
+    mov rdi, rax
+    call print_char
+    call print_newline
+    jmp .end
+
+.notfound3:
+    mov rdi, msg_notfound
+    call print_string
+    call print_newline
+
+.end:
+    call exit
+```
+
+Com o script `run_test.sh`:
+
+```sh
+#!/bin/bash
+# filepath: c:\Users\caioe\Documents\Projetos\LLP\c7\codigos\dicionario\run_test.sh
+
+
+# Monta todos os arquivos necessários
+nasm -f elf64 -o test_dict.o test_dict.asm
+nasm -f elf64 -o find_word.o find_word.asm
+nasm -f elf64 -o cfa.o cfa.asm
+nasm -f elf64 -o lib.o lib.asm
+
+# Linka tudo em um executável
+ld -o test_dict.exe test_dict.o find_word.o cfa.o lib.o
+
+# Executa o teste
+./test_dict.exe
+```
+
+Com essas duas funções implementadas, agora devemos implementar a lógica de endereços para iniciar o nosso interpretador. 
 
 
 
